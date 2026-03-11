@@ -1,109 +1,326 @@
-import { useMemo, useState } from 'react'
-import './App.css'
+import React, { useState } from "react";
 
-const API_BASE = ''
+export default function App() {
 
-async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  })
+  const [tab,setTab] = useState("write");
+  const [status,setStatus] = useState("Bereit");
 
-  let payload = null
-  try {
-    payload = await response.json()
-  } catch {
-    payload = { ok: false, error: 'Ungültige Serverantwort' }
-  }
+  const [name,setName] = useState("");
+  const [klasse,setKlasse] = useState("");
+  const [tage,setTage] = useState("");
 
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error || `HTTP ${response.status}`)
-  }
-  return payload
-}
+  const [password,setPassword] = useState("");
+  const [oldPassword,setOldPassword] = useState("");
 
-function App() {
-  const [readResult, setReadResult] = useState(null)
-  const [writeText, setWriteText] = useState('')
-  const [status, setStatus] = useState({ type: 'idle', message: 'Bereit.' })
-  const [busy, setBusy] = useState(false)
+  const [tagData,setTagData] = useState(null);
 
-  const canWrite = useMemo(() => writeText.trim().length > 0 && !busy, [writeText, busy])
+  const api = async (url,method="GET",body=null)=>{
+    try{
 
-  const readTag = async () => {
-    setBusy(true)
-    setStatus({ type: 'info', message: 'Warte auf NFC-Tag...' })
-    try {
-      const data = await apiRequest('/api/tag/read', { method: 'POST' })
-      setReadResult(data)
-      setStatus({ type: 'success', message: 'Tag erfolgreich gelesen.' })
-    } catch (error) {
-      setStatus({ type: 'error', message: error.message })
-    } finally {
-      setBusy(false)
+      const res = await fetch(url,{
+        method,
+        headers:{ "Content-Type":"application/json"},
+        body: body ? JSON.stringify(body):null
+      });
+
+      const data = await res.json();
+
+      if(data.ok){
+        setStatus("Erfolgreich");
+      }else{
+        setStatus(data.error);
+      }
+
+      return data;
+
+    }catch(e){
+      setStatus("Verbindungsfehler");
     }
   }
 
-  const writeTag = async () => {
-    setBusy(true)
-    setStatus({ type: 'info', message: 'Warte auf NFC-Tag zum Schreiben...' })
-    try {
-      await apiRequest('/api/tag/write', {
-        method: 'POST',
-        body: JSON.stringify({ text: writeText }),
-      })
-      setStatus({ type: 'success', message: 'Text wurde auf Tag geschrieben.' })
-    } catch (error) {
-      setStatus({ type: 'error', message: error.message })
-    } finally {
-      setBusy(false)
+  const readTag = async ()=>{
+
+    setStatus("Lese NFC Tag...");
+
+    const data = await api("/api/tag/read");
+
+    if(data?.ok){
+      setTagData(data);
     }
+
+  }
+
+  const writeTag = async ()=>{
+
+    const text = JSON.stringify({
+      name,
+      klasse,
+      tage
+    });
+
+    setStatus("Schreibe Tag...");
+
+    const data = await api("/api/tag/write","POST",{text});
+
+    if(data?.ok){
+      setTagData(data);
+    }
+
+  }
+
+  const setTagPassword = async ()=>{
+
+    setStatus("Setze Passwort...");
+
+    await api("/api/tag/password/set","POST",{password});
+
+  }
+
+  const removeTagPassword = async ()=>{
+
+    setStatus("Entferne Passwort...");
+
+    await api("/api/tag/password/remove","POST",{oldPassword});
+
+  }
+
+  const eraseTag = async ()=>{
+
+    setStatus("Lösche Tag...");
+
+    await api("/api/tag/erase","POST");
+
+  }
+
+  const healthCheck = async ()=>{
+
+    const data = await api("/api/health");
+
+    if(data?.ok){
+      setStatus("API Online - IP: "+data.ip);
+    }
+
   }
 
   return (
-    <main className="app">
-      <section className="panel">
-        <h1>NFC Webapp</h1>
-        <p className="hint">REST API am ESP: <code>/api/tag/*</code></p>
 
-        <div className="actions">
-          <button onClick={readTag} disabled={busy}>
-            {busy ? 'Bitte warten...' : 'NFC lesen'}
+    <div style={styles.page}>
+
+      <h1 style={styles.title}>NFC Voucher System</h1>
+
+      <div style={styles.tabs}>
+
+        <Tab name="write" tab={tab} setTab={setTab}>Voucher schreiben</Tab>
+        <Tab name="read" tab={tab} setTab={setTab}>Tag lesen</Tab>
+        <Tab name="security" tab={tab} setTab={setTab}>Sicherheit</Tab>
+        <Tab name="admin" tab={tab} setTab={setTab}>Admin</Tab>
+
+      </div>
+
+      <div style={styles.card}>
+
+        {tab==="write" && (
+
+          <>
+          <h2>Voucher erstellen</h2>
+
+          <input style={styles.input} placeholder="Schülername"
+          value={name} onChange={e=>setName(e.target.value)}/>
+
+          <input style={styles.input} placeholder="Klasse"
+          value={klasse} onChange={e=>setKlasse(e.target.value)}/>
+
+          <input style={styles.input} type="number"
+          placeholder="Anzahl Tage"
+          value={tage} onChange={e=>setTage(e.target.value)}/>
+
+          <button style={styles.primaryButton} onClick={writeTag}>
+          Auf NFC schreiben
           </button>
-        </div>
-
-        {readResult && (
-          <div className="result">
-            <div><strong>Tagtyp:</strong> {readResult.tagType}</div>
-            <div><strong>UID:</strong> {readResult.uid}</div>
-            <div><strong>Text:</strong> {readResult.text || '(leer)'}</div>
-          </div>
+          </>
         )}
-      </section>
 
-      <section className="panel">
-        <h2>NFC beschreiben</h2>
-        <label htmlFor="writeText">Text</label>
-        <textarea
-          id="writeText"
-          value={writeText}
-          onChange={(e) => setWriteText(e.target.value)}
-          placeholder="Text für den NFC-Tag..."
-          rows={5}
-          disabled={busy}
-        />
-        <div className="actions">
-          <button onClick={writeTag} disabled={!canWrite}>
-            NFC beschreiben
+        {tab==="read" && (
+
+          <>
+          <h2>NFC Tag lesen</h2>
+
+          <button style={styles.primaryButton} onClick={readTag}>
+          Tag scannen
           </button>
-        </div>
-      </section>
 
-      <section className={`status ${status.type}`}>
-        {status.message}
-      </section>
-    </main>
+          {tagData && (
+
+            <div style={styles.resultBox}>
+
+              <p><b>UID:</b> {tagData.uid}</p>
+              <p><b>Typ:</b> {tagData.tagType}</p>
+
+              <pre style={styles.pre}>
+              {tagData.text}
+              </pre>
+
+            </div>
+
+          )}
+          </>
+        )}
+
+        {tab==="security" && (
+
+          <>
+          <h2>Tag Sicherheit</h2>
+
+          <input style={styles.input}
+          placeholder="Neues Passwort"
+          value={password}
+          onChange={e=>setPassword(e.target.value)}/>
+
+          <button style={styles.primaryButton}
+          onClick={setTagPassword}>
+          Passwort setzen
+          </button>
+
+          <hr/>
+
+          <input style={styles.input}
+          placeholder="Altes Passwort"
+          value={oldPassword}
+          onChange={e=>setOldPassword(e.target.value)}/>
+
+          <button style={styles.secondaryButton}
+          onClick={removeTagPassword}>
+          Passwort entfernen
+          </button>
+
+          </>
+        )}
+
+        {tab==="admin" && (
+
+          <>
+          <h2>Admin Tools</h2>
+
+          <button style={styles.secondaryButton}
+          onClick={eraseTag}>
+          Tag löschen
+          </button>
+
+          <button style={styles.primaryButton}
+          onClick={healthCheck}>
+          API Status prüfen
+          </button>
+
+          </>
+        )}
+
+      </div>
+
+      <div style={styles.status}>
+      {status}
+      </div>
+
+    </div>
+
+  );
+}
+
+function Tab({name,tab,setTab,children}){
+
+  return(
+    <button
+      onClick={()=>setTab(name)}
+      style={{
+        padding:"10px 16px",
+        border:"none",
+        borderBottom: tab===name ? "3px solid #2c7be5":"3px solid transparent",
+        background:"none",
+        cursor:"pointer",
+        fontWeight: tab===name ? "bold":"normal"
+      }}
+    >
+      {children}
+    </button>
   )
 }
 
-export default App
+const styles={
+
+page:{
+  fontFamily:"Arial",
+  background:"#f5f7fb",
+  minHeight:"100vh",
+  padding:"40px"
+},
+
+title:{
+  textAlign:"center",
+  marginBottom:"30px"
+},
+
+tabs:{
+  display:"flex",
+  justifyContent:"center",
+  gap:"20px",
+  marginBottom:"20px"
+},
+
+card:{
+  maxWidth:"500px",
+  margin:"auto",
+  background:"white",
+  padding:"30px",
+  borderRadius:"10px",
+  boxShadow:"0 6px 18px rgba(0,0,0,0.1)"
+},
+
+input:{
+  width:"100%",
+  padding:"10px",
+  marginBottom:"12px",
+  borderRadius:"6px",
+  border:"1px solid #ccc",
+  fontSize:"14px"
+},
+
+primaryButton:{
+  width:"100%",
+  padding:"12px",
+  background:"#2c7be5",
+  color:"white",
+  border:"none",
+  borderRadius:"6px",
+  cursor:"pointer",
+  marginTop:"10px"
+},
+
+secondaryButton:{
+  width:"100%",
+  padding:"12px",
+  background:"#20c997",
+  color:"white",
+  border:"none",
+  borderRadius:"6px",
+  cursor:"pointer",
+  marginTop:"10px"
+},
+
+resultBox:{
+  marginTop:"20px",
+  background:"#f8f9fa",
+  padding:"12px",
+  borderRadius:"6px"
+},
+
+pre:{
+  fontSize:"12px",
+  whiteSpace:"pre-wrap"
+},
+
+status:{
+  textAlign:"center",
+  marginTop:"20px",
+  color:"#444"
+}
+
+}
