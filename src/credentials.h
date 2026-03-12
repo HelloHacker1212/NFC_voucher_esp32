@@ -1,7 +1,7 @@
 #pragma once
 
 #define WIFI_SSID "Student" ///< SSID des WLANs ... bitte anpassen
-#define WIFI_USER "dummy" ///< Benutzername für WPA2-Enterprise ... bitte anpassen
+#define WIFI_USER "elias.lang" ///< Benutzername für WPA2-Enterprise ... bitte anpassen
 #define WIFI_PASSWORD "dummy" ///< Passwort für WPA2-Enterprise ... bitte anpassen
 
 

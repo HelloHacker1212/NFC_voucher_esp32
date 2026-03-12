@@ -20,8 +20,8 @@
 // PN532 over I2C with IRQ/RESET lines
 constexpr uint8_t PN532_IRQ_PIN = 2;
 constexpr uint8_t PN532_RESET_PIN = 3;
-constexpr uint8_t I2C_SDA_PIN = 8;
-constexpr uint8_t I2C_SCL_PIN = 9;
+constexpr uint8_t I2C_SDA_PIN = 9;
+constexpr uint8_t I2C_SCL_PIN = 8;
 constexpr uint8_t STATUS_LED_PIN = 48;
 constexpr uint8_t STATUS_LED_COUNT = 1;
 
@@ -153,9 +153,9 @@ bool readTagUid(uint8_t *uid, uint8_t *uidLength, uint16_t timeoutMs = TAG_WAIT_
         return true;
       }
       logLine("UID read attempt failed: " + String(totalAttempts));
-      delay(20);
+      vTaskDelay(1);
     }
-    delay(40);
+    vTaskDelay(1);
   }
   logLine("UID read timeout after attempts=" + String(totalAttempts));
   return false;
@@ -170,7 +170,7 @@ bool readPageWithRetry(uint8_t page, uint8_t *buffer) {
       return true;
     }
     logLine("Page read failed: page=" + String(page) + " attempt=" + String(attempt + 1));
-    delay(8);
+    vTaskDelay(1);
   }
   logLine("Page read failed permanently: page=" + String(page));
   return false;
@@ -185,7 +185,7 @@ bool writePageWithRetry(uint8_t page, uint8_t *buffer) {
       return true;
     }
     logLine("Page write failed: page=" + String(page) + " attempt=" + String(attempt + 1));
-    delay(8);
+    vTaskDelay(1);
   }
   logLine("Page write failed permanently: page=" + String(page));
   return false;
@@ -225,10 +225,15 @@ bool readTagText(String &textOut) {
 bool eraseTagUserMemory() {
   uint8_t blank[4] = {0, 0, 0, 0};
   for (uint8_t page = NTAG215_FIRST_USER_PAGE; page <= NTAG215_LAST_USER_PAGE; page++) {
-    if (!writePageWithRetry(page, blank)) {
-      return false;
-    }
+
+  if (!writePageWithRetry(page, blank)) {
+    return false;
   }
+
+  if (page % 4 == 0) {
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
   return true;
 }
 
@@ -246,22 +251,30 @@ bool writeStringToTag(const String &text) {
 
   size_t srcIndex = 0;
   for (uint8_t page = NTAG215_FIRST_USER_PAGE; page <= NTAG215_LAST_USER_PAGE; page++) {
-    uint8_t data[4] = {0, 0, 0, 0};
-    for (uint8_t i = 0; i < 4; i++) {
-      if (srcIndex < text.length()) {
-        data[i] = static_cast<uint8_t>(text[srcIndex++]);
-      } else if (srcIndex == text.length()) {
-        data[i] = 0x00;
-        srcIndex++;
-      }
-    }
-    if (!writePageWithRetry(page, data)) {
-      return false;
-    }
-    if (srcIndex > text.length()) {
-      break;
+
+  uint8_t data[4] = {0,0,0,0};
+
+  for (uint8_t i = 0; i < 4; i++) {
+    if (srcIndex < text.length()) {
+      data[i] = text[srcIndex++];
+    } else if (srcIndex == text.length()) {
+      data[i] = 0x00;
+      srcIndex++;
     }
   }
+
+  if (!writePageWithRetry(page, data)) {
+    return false;
+  }
+
+  if (page % 4 == 0) {
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+
+  if (srcIndex > text.length()) {
+    break;
+  }
+}
   return true;
 }
 
@@ -727,6 +740,15 @@ void setupWiFi() {
 void setup() {
   Serial.begin(115200);
   delay(300);
+  Wire.begin(I2C_SDA_PIN,I2C_SCL_PIN);
+  Serial.println("I2C Scanner Start");
+  for(byte addr=1; addr<127; addr++){
+    Wire.beginTransmission(addr);
+    if(Wire.endTransmission() == 0){
+      Serial.print("Found I2C device at 0x");
+      Serial.println(addr,HEX);
+    }
+  }
   Serial.println("NFC REST API booting...");
   logLine("Debug logging enabled");
   statusLed.begin();
