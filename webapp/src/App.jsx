@@ -1,3 +1,4 @@
+// ...existing code...
 import React, { useState } from "react";
 
 export default function App() {
@@ -38,17 +39,81 @@ export default function App() {
     }
   }
 
+  // ...existing code...
+
   const readTag = async ()=>{
 
-    setStatus("Lese NFC Tag...");
+    // Prefer Web NFC if available (modern Android Chrome / Edge)
+    if (typeof window !== "undefined" && "NDEFReader" in window) {
+      try {
+        setStatus("Web NFC: Scanne... Bitte Tag an das Gerät halten");
+        const ndef = new NDEFReader();
+        await ndef.scan();
 
+        ndef.onreadingerror = () => {
+          setStatus("Fehler beim Lesen des Tags");
+        };
+
+        ndef.onreading = (event) => {
+          try {
+            const serial = event.serialNumber || null;
+            const message = event.message;
+            const parts = [];
+
+            for (const record of message.records) {
+              // Handle common record types; try to decode raw data otherwise
+              if (record.recordType === "text") {
+                // NDEF text payload: status byte, language code, then text
+                const dataView = record.data instanceof DataView ? record.data : new DataView(record.data);
+                const statusByte = dataView.getUint8(0);
+                const langLength = statusByte & 0x3F;
+                const textDecoder = new TextDecoder("utf-8");
+                const text = textDecoder.decode(new DataView(dataView.buffer, dataView.byteOffset + 1 + langLength, dataView.byteLength - 1 - langLength));
+                parts.push(text);
+              } else if (record.recordType === "url") {
+                const textDecoder = new TextDecoder();
+                const url = textDecoder.decode(record.data);
+                parts.push(url);
+              } else {
+                // fallback: try to decode as utf-8
+                try {
+                  const textDecoder = new TextDecoder();
+                  const txt = textDecoder.decode(record.data);
+                  parts.push(txt);
+                } catch {
+                  parts.push(`<unbekannter RecordTyp: ${record.recordType}>`);
+                }
+              }
+            }
+
+            setTagData({
+              uid: serial,
+              tagType: "NDEF",
+              text: parts.join("\n")
+            });
+
+            setStatus("Tag gelesen");
+          } catch (err) {
+            setStatus("Fehler beim Verarbeiten des Tags");
+          }
+        };
+
+      } catch (err) {
+        setStatus("Scan abgebrochen: " + (err?.message || err));
+      }
+
+      return;
+    }
+
+    // Fallback: call backend API (existing behaviour)
+    setStatus("Web NFC nicht verfügbar, verwende API...");
     const data = await api("/api/tag/read");
-
     if(data?.ok){
       setTagData(data);
     }
-
   }
+
+  // ...existing code...
 
   const writeTag = async ()=>{
 
@@ -85,7 +150,7 @@ export default function App() {
   }
 
   const eraseTag = async ()=>{
-
+    
     setStatus("Lösche Tag...");
 
     await api("/api/tag/erase","POST");
@@ -225,6 +290,7 @@ export default function App() {
   );
 }
 
+// ...existing code...
 function Tab({name,tab,setTab,children}){
 
   return(
